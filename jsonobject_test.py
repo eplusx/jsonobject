@@ -139,9 +139,9 @@ class TestJSONSerializableObject(object):
         class SomeObject(jsonobject.JSONSerializableObject):
             # This does the same thing as @jsonproperty getter, setter and
             # deleter.
-            # Note that the JSON name is mandatory. It can be a positional
-            # argument.
-            foo = jsonobject.JSONProperty('foo')
+            # Note that the JSON name is optional. If omitted, it is inferred
+            # from the Python field name.
+            foo = jsonobject.JSONProperty()
 
         s = SomeObject()
         # The property defaults to None.
@@ -156,7 +156,7 @@ class TestJSONSerializableObject(object):
     def test_json_property_default(self):
         class SomeObject(jsonobject.JSONSerializableObject):
             # default speficies the default value of the property.
-            foo = jsonobject.JSONProperty('foo', default='FOO')
+            foo = jsonobject.JSONProperty(default='FOO')
 
         s = SomeObject()
         assert s.foo == 'FOO'
@@ -167,7 +167,7 @@ class TestJSONSerializableObject(object):
         class SomeObject(jsonobject.JSONSerializableObject):
             # List passed as the default value. This should not be reused over
             # object instances.
-            foo = jsonobject.JSONProperty('foo', default=[])
+            foo = jsonobject.JSONProperty(default=[])
 
         s = SomeObject()
         assert s.foo == []
@@ -181,7 +181,7 @@ class TestJSONSerializableObject(object):
 
     def test_json_property_non_reused_default_list_consistency(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo', default=[])
+            foo = jsonobject.JSONProperty(default=[])
 
         # The getter should return the same object regardless of the timing of
         # member access.
@@ -194,7 +194,7 @@ class TestJSONSerializableObject(object):
         class SomeObject(jsonobject.JSONSerializableObject):
             # Dict passed as the default value. This should not be reused over
             # object instances.
-            foo = jsonobject.JSONProperty('foo', default={})
+            foo = jsonobject.JSONProperty(default={})
 
         s = SomeObject()
         assert s.foo == {}
@@ -208,12 +208,12 @@ class TestJSONSerializableObject(object):
 
     def test_json_property_non_reused_default_object(self):
         class ChildObject(jsonobject.JSONSerializableObject):
-            bar = jsonobject.JSONProperty('bar', default='BAR')
+            bar = jsonobject.JSONProperty(default='BAR')
 
         class SomeObject(jsonobject.JSONSerializableObject):
             # Dict passed as the default value. This should not be reused over
             # object instances.
-            foo = jsonobject.JSONProperty('foo', default=ChildObject())
+            foo = jsonobject.JSONProperty(default=ChildObject())
 
         s = SomeObject()
         assert s.foo.bar == 'BAR'
@@ -227,7 +227,7 @@ class TestJSONSerializableObject(object):
 
     def test_json_property_init(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo')
+            foo = jsonobject.JSONProperty()
             bar = object()
 
         # JSONSerializableObject constructor accepts key-value specifications
@@ -243,7 +243,7 @@ class TestJSONSerializableObject(object):
 
     def test_json_property_not_shared_between_instances(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo')
+            foo = jsonobject.JSONProperty()
 
         s = SomeObject(foo='FOO')
         t = SomeObject(foo='BAR')
@@ -256,8 +256,7 @@ class TestJSONSerializableObject(object):
                 self._foo = foo
 
             # This property exports SomeObject._foo in a readonly manner.
-            foo = jsonobject.ReadonlyJSONProperty('foo',
-                                                  wrapped_variable='_foo')
+            foo = jsonobject.ReadonlyJSONProperty(wrapped_variable='_foo')
 
         s = SomeObject('FOO')
         assert s.foo == 'FOO'
@@ -266,12 +265,21 @@ class TestJSONSerializableObject(object):
             s.foo = 'BAR'
         assert s.json('{"foo": "FOO"}')
 
-    def test_readonly_json_property_init(self):
+    def test_json_readonly_property_omitted_variable_name(self):
         class SomeObject(jsonobject.JSONSerializableObject):
             # If wrapped_variable is omitted, the property tries to wrap one
             # with a random unique name.
-            foo = jsonobject.ReadonlyJSONProperty('foo',
-                                                  wrapped_variable='_foo')
+            foo = jsonobject.ReadonlyJSONProperty()
+
+        s = SomeObject(foo='FOO')
+        assert s.foo == 'FOO'
+        with pytest.raises(AttributeError):
+            s.foo = 'BAR'
+        assert s.json('{"foo": "FOO"}')
+
+    def test_readonly_json_property_init(self):
+        class SomeObject(jsonobject.JSONSerializableObject):
+            foo = jsonobject.ReadonlyJSONProperty(wrapped_variable='_foo')
             # This is a class variable whose name conflicts with the wrapped
             # variable of foo.
             _foo = 'CLASS_FOO'
@@ -290,14 +298,14 @@ class TestJSONSerializableObject(object):
 
     def test_readonly_json_property_default(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.ReadonlyJSONProperty('foo', default='FOO')
+            foo = jsonobject.ReadonlyJSONProperty(default='FOO')
 
         assert SomeObject().foo == 'FOO'
         assert SomeObject(foo='BAR').foo == 'BAR'
 
     def test_readonly_json_property_not_shared_between_instances(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.ReadonlyJSONProperty('foo')
+            foo = jsonobject.ReadonlyJSONProperty()
 
         s = SomeObject(foo='FOO')
         t = SomeObject(foo='BAR')
@@ -306,8 +314,8 @@ class TestJSONSerializableObject(object):
 
     def test_nested_jsonobject(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.JSONProperty('a', default='A')
-            b = jsonobject.ReadonlyJSONProperty('b', default='B')
+            a = jsonobject.JSONProperty(default='A')
+            b = jsonobject.ReadonlyJSONProperty(default='B')
 
             @jsonproperty
             def c(self):
@@ -315,8 +323,8 @@ class TestJSONSerializableObject(object):
 
         # You can create a nested class from another serializable object class.
         class AnotherObject(SomeObject):
-            d = jsonobject.JSONProperty('d', default='D')
-            e = jsonobject.ReadonlyJSONProperty('e', default='E')
+            d = jsonobject.JSONProperty(default='D')
+            e = jsonobject.ReadonlyJSONProperty(default='E')
 
             @jsonproperty
             def f(self):
@@ -336,15 +344,15 @@ class TestJSONSerializableObject(object):
 
     def test_overriding_jsonobject(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.JSONProperty('a', default='A')
-            b = jsonobject.JSONProperty('b', default='B')
+            a = jsonobject.JSONProperty(default='A')
+            b = jsonobject.JSONProperty(default='B')
 
             def update_a(self, value):
                 self.a = value
 
         class AnotherObject(SomeObject):
             # You can override some properties exported by the superclass.
-            a = jsonobject.JSONProperty('a', default='AA')
+            a = jsonobject.JSONProperty(default='AA')
 
         s = SomeObject()
         assert s.json(sort_keys=True) == '{"a": "A", "b": "B"}'
@@ -357,9 +365,9 @@ class TestJSONSerializableObject(object):
 
     def test_value_type(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.JSONProperty('a', default='A', value_type=str)
-            b = jsonobject.JSONProperty('b', default=123, value_type=int)
-            c = jsonobject.JSONProperty('c', default='C')
+            a = jsonobject.JSONProperty(default='A', value_type=str)
+            b = jsonobject.JSONProperty(default=123, value_type=int)
+            c = jsonobject.JSONProperty(default='C')
 
         s = SomeObject()
         assert s.json(sort_keys=True) == '{"a": "A", "b": 123, "c": "C"}'
@@ -377,12 +385,12 @@ class TestJSONSerializableObject(object):
         # Note that this check happens when a class is being defined.
         with pytest.raises(TypeError):
             class SomeObject(jsonobject.JSONSerializableObject):
-                a = jsonobject.JSONProperty('a', default='A', value_type=int)
+                a = jsonobject.JSONProperty(default='A', value_type=int)
 
     def test_value_type_int_long(self):
         # It is allowed to assign an int to a field expecting a long.
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.JSONProperty('a', default=123, value_type=long)
+            a = jsonobject.JSONProperty(default=123, value_type=long)
 
         s = SomeObject()
         assert s.a == 123
@@ -391,15 +399,14 @@ class TestJSONSerializableObject(object):
 
     def test_value_type_readonly(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.ReadonlyJSONProperty('a', default='A',
-                                                value_type=str)
+            a = jsonobject.ReadonlyJSONProperty(default='A', value_type=str)
 
         with pytest.raises(TypeError):
             SomeObject(a=123)
 
     def test_value_type_readonly_wrapped_variable(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.ReadonlyJSONProperty('a', value_type=str,
+            a = jsonobject.ReadonlyJSONProperty(value_type=str,
                                                 wrapped_variable='_a')
 
         s = SomeObject(a=None)
@@ -412,11 +419,11 @@ class TestJSONSerializableObject(object):
     def test_value_type_readonly_default(self):
         with pytest.raises(TypeError):
             class SomeObject(jsonobject.JSONSerializableObject):
-                a = jsonobject.JSONProperty('a', default='A', value_type=int)
+                a = jsonobject.JSONProperty(default='A', value_type=int)
 
     def test_element_type_list(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.JSONProperty('a', value_type=list, element_type=int)
+            a = jsonobject.JSONProperty(value_type=list, element_type=int)
 
         s = SomeObject(a=[1, 2, 3])
         with pytest.raises(TypeError):
@@ -424,7 +431,7 @@ class TestJSONSerializableObject(object):
 
     def test_element_type_tuple(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.JSONProperty('a', value_type=tuple,
+            a = jsonobject.JSONProperty(value_type=tuple,
                                         element_type=int)
 
         s = SomeObject(a=(1, 2, 3))
@@ -433,7 +440,7 @@ class TestJSONSerializableObject(object):
 
     def test_element_type_dict(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.JSONProperty('a', value_type=dict, element_type=int)
+            a = jsonobject.JSONProperty(value_type=dict, element_type=int)
 
         s = SomeObject(a={'a': 1, 'b': 2})
         assert s.a['a'] == 1
@@ -443,7 +450,7 @@ class TestJSONSerializableObject(object):
 
     def test_key_type_dict(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.JSONProperty('a', value_type=dict)
+            a = jsonobject.JSONProperty(value_type=dict)
 
         s = SomeObject(a={'a': 1, 'b': 2})
         assert s.a['a'] == 1
@@ -456,8 +463,8 @@ class TestJSONSerializableObject(object):
 
     def test_parse_text(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo', u'FOO', value_type=unicode)
-            bar = jsonobject.JSONProperty('bar', 0, value_type=int)
+            foo = jsonobject.JSONProperty(default=u'FOO', value_type=unicode)
+            bar = jsonobject.JSONProperty(default=0, value_type=int)
 
         s = SomeObject.parse_text('{"foo": "FOOFOO", "bar": 123}')
         assert s.foo == u'FOOFOO'
@@ -480,7 +487,7 @@ class TestJSONSerializableObject(object):
 
     def test_parse_overriding(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo', u'FOO', value_type=unicode)
+            foo = jsonobject.JSONProperty(default=u'FOO', value_type=unicode)
 
         s = SomeObject.parse({'foo': u'FOOFOO'})
         assert s.foo == u'FOOFOO'
@@ -489,10 +496,10 @@ class TestJSONSerializableObject(object):
 
     def test_parse_nested(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo', 123, value_type=int)
+            foo = jsonobject.JSONProperty(default=123, value_type=int)
 
         class AnotherObject(jsonobject.JSONSerializableObject):
-            bar = jsonobject.JSONProperty('bar', value_type=SomeObject)
+            bar = jsonobject.JSONProperty(value_type=SomeObject)
 
         s = AnotherObject.parse_text('{"bar": {"foo": 123}}')
         assert isinstance(s.bar, SomeObject)
@@ -500,8 +507,7 @@ class TestJSONSerializableObject(object):
 
     def test_parse_dict_int(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo', value_type=dict,
-                                          element_type=int)
+            foo = jsonobject.JSONProperty(value_type=dict, element_type=int)
 
         s = SomeObject.parse_text('{"foo": {"a": 1, "b": 2}}')
         assert len(s.foo) == 2
@@ -512,8 +518,7 @@ class TestJSONSerializableObject(object):
         # Element type declared as long, but it's acceptable to receive int
         # values. They are always safe to upcast.
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo', value_type=dict,
-                                          element_type=long)
+            foo = jsonobject.JSONProperty(value_type=dict, element_type=long)
 
         s = SomeObject.parse_text('{"foo": {"a": 1, "b": 2}}')
         assert len(s.foo) == 2
@@ -522,10 +527,10 @@ class TestJSONSerializableObject(object):
 
     def test_parse_dict_object(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo', 123, value_type=int)
+            foo = jsonobject.JSONProperty(default=123, value_type=int)
 
         class AnotherObject(jsonobject.JSONSerializableObject):
-            bar = jsonobject.JSONProperty('bar', value_type=dict,
+            bar = jsonobject.JSONProperty(value_type=dict,
                                           element_type=SomeObject)
 
         s = AnotherObject.parse_text('{"bar": {"a": {"foo": 1}, '
@@ -538,10 +543,10 @@ class TestJSONSerializableObject(object):
 
     def test_parse_list(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo', 123, value_type=int)
+            foo = jsonobject.JSONProperty(default=123, value_type=int)
 
         class AnotherObject(jsonobject.JSONSerializableObject):
-            bar = jsonobject.JSONProperty('bar', value_type=list,
+            bar = jsonobject.JSONProperty(value_type=list,
                                           element_type=SomeObject)
 
         s = AnotherObject.parse_text('{"bar": [{"foo": 1}, {"foo": 2}]}')
@@ -555,10 +560,10 @@ class TestJSONSerializableObject(object):
 
     def test_parse_tuple(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo', 123, value_type=int)
+            foo = jsonobject.JSONProperty(default=123, value_type=int)
 
         class AnotherObject(jsonobject.JSONSerializableObject):
-            bar = jsonobject.JSONProperty('bar', value_type=tuple,
+            bar = jsonobject.JSONProperty(value_type=tuple,
                                           element_type=SomeObject)
 
         s = AnotherObject.parse_text('{"bar": [{"foo": 1}, {"foo": 2}]}')
@@ -576,7 +581,7 @@ class TestJSONSerializableObject(object):
             # There may be a case where the property name in Python and JSON
             # differs, especially if the name is keywords like "or", "and" or
             # such.
-            foo_ = jsonobject.JSONProperty('foo', value_type=int)
+            foo_ = jsonobject.JSONProperty(name='foo', value_type=int)
 
         s = SomeObject.parse_text('{"foo": 123}')
         assert s.foo_ == 123
@@ -589,8 +594,8 @@ class TestJSONSerializableObject(object):
             # These name are swapped in JSON world. Such a situation should
             # never happen in reality, but in the specification, this is still
             # allowed.
-            foo = jsonobject.JSONProperty('bar', value_type=int)
-            bar = jsonobject.JSONProperty('foo', value_type=int)
+            foo = jsonobject.JSONProperty(name='bar', value_type=int)
+            bar = jsonobject.JSONProperty(name='foo', value_type=int)
 
         s = SomeObject.parse_text('{"foo": 123, "bar": 456}')
         assert s.foo == 456
@@ -602,10 +607,10 @@ class TestJSONSerializableObject(object):
 
     def test_parse_field_in_parent(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty('foo', value_type=int)
+            foo = jsonobject.JSONProperty(value_type=int)
 
         class AnotherObject(SomeObject):
-            bar = jsonobject.JSONProperty('bar', value_type=int)
+            bar = jsonobject.JSONProperty(value_type=int)
 
         s = AnotherObject.parse_text('{"foo": 123, "bar": 456}')
         assert s.foo == 123
@@ -634,14 +639,14 @@ class TestJSONSerializableObject(object):
                 for key, value in kwargs.iteritems():
                     if not hasattr(cls, key):
                         setattr(cls, key, jsonobject.JSONProperty(
-                            key, default=value))
+                            name=key, default=value))
                 # Set the value using JSONSerializableObject's constructor.
                 super(cls, self).__init__(**kwargs)
 
             # Note that, this class level property will be present in the new
-            # dynamically created class, because of self.__clas__.__dict__ is
+            # dynamically created class, because self.__class__.__dict__ is
             # passed to type() above.
-            foo = jsonobject.JSONProperty('foo', default='FOO')
+            foo = jsonobject.JSONProperty(default='FOO')
 
         s = SomeObject(bar='BAR')
         assert s.foo == 'FOO'
@@ -666,11 +671,11 @@ class TestJSONSerializableObject(object):
                 for key, value in kwargs.iteritems():
                     if not hasattr(cls, key):
                         setattr(cls, key, jsonobject.JSONProperty(
-                            key, default=value))
+                            name=key, default=value))
                 # Set the value using JSONSerializableObject's constructor.
                 super(cls, self).__init__(**kwargs)
 
-            foo = jsonobject.JSONProperty('foo', default='FOO')
+            foo = jsonobject.JSONProperty(default='FOO')
 
         s = SomeObject(bar='BAR')
         # This is expected...
@@ -697,10 +702,11 @@ class TestJSONSerializableObject(object):
             # This way the class definition is much simpler...
             def __init__(self, **kwargs):
                 super(SomeObject, self).__init__(**kwargs)
-                # bar is a dynamically created property.
-                self.bar = jsonobject.JSONProperty('bar', default='BAR')
+                # bar is a dynamically created property. You must provide the
+                # property name.
+                self.bar = jsonobject.JSONProperty(name='bar', default='BAR')
 
-            foo = jsonobject.JSONProperty('foo', default='FOO')
+            foo = jsonobject.JSONProperty(default='FOO')
 
         s = SomeObject()
         assert s.foo == 'FOO'

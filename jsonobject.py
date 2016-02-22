@@ -8,8 +8,8 @@ exportable properties.
 A short example illustrating what this module does:
 
 >>> class SomeObject(JSONSerializableObject):
-...     foo = JSONProperty('foo', 'FOO_DEFAULT')
-...     bar = ReadonlyJSONProperty('bar', 'BAR_DEFAULT')
+...     foo = JSONProperty(default='FOO_DEFAULT')
+...     bar = ReadonlyJSONProperty(default='BAR_DEFAULT')
 ...
 ...     @jsonproperty
 ...     def baz(self):
@@ -57,8 +57,11 @@ class JSONSerializableObject(object):
         else:
             self.__overriding_data = kwargs
 
-    def _initialize(self, data, _ignore_unknown=False, _name_mapping=False):
+    def _initialize(self, data, _ignore_unknown=False, _name_mapping=False,
+                    _infer_property_names=True):
         self_class = self.__class__
+        if _infer_property_names:
+            self_class._infer_property_names()
         name_map = self_class._build_name_map(_name_mapping)
         for key, value in data.iteritems():
             if key not in name_map:
@@ -82,6 +85,13 @@ class JSONSerializableObject(object):
             elif member.fset:
                 setattr(self, name_map[key], value)
             # Ignore getter-only CustomizableJSONProperty.
+
+    @classmethod
+    def _infer_property_names(cls):
+        for key in dir(cls):
+            value = getattr(cls, key)
+            if isinstance(value, CustomizableJSONProperty) and not value.name:
+                value.name = key
 
     @classmethod
     def _build_name_map(cls, name_mapping):
@@ -255,9 +265,10 @@ class JSONSerializableObject(object):
         # used to initialize, and then kwargs specifications override them.
         parsed_obj = cls(_initialize=False, **kwargs)
         parsed_obj._initialize(obj, _ignore_unknown=_ignore_unknown,
-                               _name_mapping=True)
+                               _name_mapping=True, _infer_property_names=True)
         parsed_obj._initialize(parsed_obj.__overriding_data,
-                               _ignore_unknown=False, _name_mapping=True)
+                               _ignore_unknown=False, _name_mapping=True,
+                               _infer_property_names=False)
         return parsed_obj
 
     def __str__(self):
@@ -294,6 +305,10 @@ class CustomizableJSONProperty(object):
     :param str name: name of this property used in JSON
     :param bool omittable: True if this property can be omitted if the value is
                            None
+    :param bool deferred_name_resolution: True if the name should be resolved
+                                          later using the dictionary of the
+                                          container object, if the name is not
+                                          explicitly given
 
     This is the real property object created when ``@jsonproperty`` decorator
     is used. It's discouraged to use this class directly. Use
@@ -301,15 +316,17 @@ class CustomizableJSONProperty(object):
     """
 
     def __init__(self, fget=None, fset=None, fdel=None, doc=None, name=None,
-                 omittable=True):
+                 omittable=True, deferred_name_resolution=False):
         self.fget = fget
         self.fset = fset
         self.fdel = fdel
         if doc is None and fget is not None:
             doc = fget.__doc__
         self.__doc__ = doc
-        self.name = name
-        if not name and fget:
+        self.name = None
+        if name:
+            self.name = name
+        elif fget and not deferred_name_resolution:
             self.name = fget.__name__
         self.omittable = omittable
 
@@ -443,11 +460,12 @@ class JSONProperty(CustomizableJSONProperty):
     """Property which supports default getter/setter, and is exported when
     the owner object is serialized to JSON.
 
-    :param str name: name of this property used in JSON
+    :param str name: name of this property used in JSON, if different from the
+                     field name
     :param default: default value of the property
     :param type value_type: expected type of the value
     :param type element_type: expected type of the element (if value_type is
-                              list)
+                              list or dict)
     :param bool omittable: True if this property can be omitted if the value is
                            None
     :param str wrapped_variable: name of the wrapped variable, or None if using
@@ -464,10 +482,10 @@ class JSONProperty(CustomizableJSONProperty):
     Example object which has :class:`JSONProperty`:
 
     >>> class SomeObject(JSONSerializableObject):
-    ...     foo = JSONProperty('foo')
+    ...     foo = JSONProperty()
 
-    Just this, you're done. Note that the name of the property is mandatory.
-    However, you don't need to write a getter or setter.
+    Just this, you're done. The JSON field name is automatically inferred, and
+    the getter and setter are generated for you.
 
     Then you can set or get a value just like a usual property.
 
@@ -482,12 +500,11 @@ class JSONProperty(CustomizableJSONProperty):
         ...
     AttributeError: Not deletable
 
-    You can set the default value with ``default`` parameter (or the second
-    positional parameter). Also you can initialize the object with
-    ``name=value`` pairs.
+    You can set the default value with ``default`` parameter. Also you can
+    initialize the object with ``name=value`` pairs.
 
     >>> class AnotherObject(JSONSerializableObject):
-    ...     bar = JSONProperty('bar', 'BAR')
+    ...     bar = JSONProperty(default='BAR')
     ...
     >>> t = AnotherObject()
     >>> t.bar
@@ -507,7 +524,7 @@ class JSONProperty(CustomizableJSONProperty):
     ...
     >>> class ObjectWithDangerousDefault(JSONSerializableObject):
     ...     # Dangerous! You set a non-primitive object as the default value!
-    ...     baz = JSONProperty('baz', CustomClass())
+    ...     baz = JSONProperty(default=CustomClass())
     ...
     >>> v = ObjectWithDangerousDefault()
     >>> v.baz.value
@@ -526,8 +543,8 @@ class JSONProperty(CustomizableJSONProperty):
     :class:`JSONSerializableObject`.
     """
 
-    def __init__(self, name, default=None, value_type=None, element_type=None,
-                 omittable=True, wrapped_variable=None):
+    def __init__(self, name=None, default=None, value_type=None,
+                 element_type=None, omittable=True, wrapped_variable=None):
         # Note that we can't have a single value in this JSONProperty object.
         # A JSONProperty will be a class variable, and shared among all the
         # instances of that class. They are all owner instances.
@@ -547,7 +564,8 @@ class JSONProperty(CustomizableJSONProperty):
                                                    id(self)))
         self._wrapped_variable = wrapped_variable
         super(JSONProperty, self).__init__(fget=self._get, fset=self._set,
-                                           name=name, omittable=omittable)
+                                           name=name, omittable=omittable,
+                                           deferred_name_resolution=True)
         self._check_type(default)
 
     def _get(self, owner):
@@ -624,7 +642,8 @@ class ReadonlyJSONProperty(JSONProperty):
     """Property which provides readonly access to a private variable of the
     owner object, and is exported when the owner object is serialized to JSON.
 
-    :param str name: name of this property used in JSON
+    :param str name: name of this property used in JSON, if different from the
+                     field name
     :param default: default value of the property
     :param type value_type: expected type of the value
     :param type element_type: expected type of the element (if value_type is
@@ -648,7 +667,7 @@ class ReadonlyJSONProperty(JSONProperty):
     Example object which has :class:`ReadonlyJSONProperty`:
 
     >>> class SomeObject(JSONSerializableObject):
-    ...     foo = ReadonlyJSONProperty('foo', wrapped_variable='_foo')
+    ...     foo = ReadonlyJSONProperty(wrapped_variable='_foo')
 
     Here ``foo`` wraps a private variable ``SomeObject._foo``. ``foo`` provides
     transparent readonly access to ``_foo`` to client code. The owner object
@@ -669,12 +688,11 @@ class ReadonlyJSONProperty(JSONProperty):
         ...
     AttributeError: Not deletable
 
-    You can set the default value with ``default`` parameter (or the second
-    positional parameter). Also you can initialize the object with
-    ``name=value`` pairs.
+    You can set the default value with ``default`` parameter. Also you can
+    initialize the object with ``name=value`` pairs.
 
     >>> class AnotherObject(JSONSerializableObject):
-    ...     bar = ReadonlyJSONProperty('bar', 'BAR', wrapped_variable='_bar')
+    ...     bar = ReadonlyJSONProperty(default='BAR', wrapped_variable='_bar')
     ...
     >>> t = AnotherObject()
     >>> t.bar
@@ -688,17 +706,17 @@ class ReadonlyJSONProperty(JSONProperty):
     other languages.
 
     >>> class YetAnotherObject(JSONSerializableObject):
-    ...     qux = ReadonlyJSONProperty('qux')
+    ...     qux = ReadonlyJSONProperty()
     ...
     >>> v = YetAnotherObject(qux='QUX')
     >>> v.qux
     'QUX'
     """
 
-    def __init__(self, name, default=None, value_type=None, element_type=None,
-                 omittable=True, wrapped_variable=None):
+    def __init__(self, name=None, default=None, value_type=None,
+                 element_type=None, omittable=True, wrapped_variable=None):
         super(ReadonlyJSONProperty, self).__init__(
-            name, default=default, value_type=value_type,
+            name=name, default=default, value_type=value_type,
             element_type=element_type, omittable=omittable,
             wrapped_variable=wrapped_variable)
 
@@ -775,8 +793,8 @@ def parse(obj, readonly=False, omittable=True, **kwargs):
         property_type = JSONProperty
     for key, value in obj.iteritems():
         value = _replace_containers(value, readonly, omittable)
-        setattr(cls, key, property_type(key, omittable=omittable,
-                                        default=value))
+        setattr(cls, key, property_type(name=key, default=value,
+                                        omittable=omittable))
     # Create a property if it's not in the input object.
     for key, value in kwargs.iteritems():
         if not hasattr(cls, key):
