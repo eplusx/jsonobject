@@ -13,4 +13,5 @@ echo "Running doctest..."
 find "${TEST_ROOT}" -name "*.py" | xargs python -m doctest
 # Run py.test tests.
 echo "Running py.test..."
-py.test "${TEST_ROOT}"
+python2 -m pytest "${TEST_ROOT}"
+python3 -m pytest "${TEST_ROOT}"

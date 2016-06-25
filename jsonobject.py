@@ -31,6 +31,14 @@ AttributeError: Not settable
 '{"bar": "BAR", "baz": "FOOFOO:BAR", "foo": "FOOFOO"}'
 """
 
+from builtins import int
+from builtins import map
+from builtins import object
+from builtins import str
+from past.builtins import long
+from past.builtins import str as oldstr
+from past.builtins import unicode
+
 import json
 
 
@@ -63,7 +71,7 @@ class JSONSerializableObject(object):
         if _infer_property_names:
             self_class._infer_property_names()
         name_map = self_class._build_name_map(_name_mapping)
-        for key, value in data.iteritems():
+        for key, value in data.items():
             if key not in name_map:
                 if _ignore_unknown:
                     continue
@@ -123,7 +131,7 @@ class JSONSerializableObject(object):
         elif (isinstance(value, dict) and value_type == dict and
                 issubclass(element_type, JSONSerializableObject)):
             replaced_map = {}
-            for k, v in value.iteritems():
+            for k, v in value.items():
                 replaced_map[k] = JSONSerializableObject._replace_containers(
                     v, element_type, None, _ignore_unknown=_ignore_unknown)
             return replaced_map
@@ -557,8 +565,10 @@ class JSONProperty(CustomizableJSONProperty):
         # reality it almost never happens if we use a namespace like this:
         # __<ClassName>_<IDofThisObject>
         self._default = default
-        self._value_type = value_type
-        self._element_type = element_type
+        # For Python 2 compatibility, a possible value or element type of short
+        # int is converted to the long int (builtins.int).
+        self._value_type = JSONProperty._correct_type(value_type)
+        self._element_type = JSONProperty._correct_type(element_type)
         if not wrapped_variable:
             wrapped_variable = ('__{}_{:x}'.format(self.__class__.__name__,
                                                    id(self)))
@@ -567,6 +577,16 @@ class JSONProperty(CustomizableJSONProperty):
                                            name=name, omittable=omittable,
                                            deferred_name_resolution=True)
         self._check_type(default)
+
+    @staticmethod
+    def _correct_type(type_):
+        if type_ is None:
+            return type_
+        if issubclass(type_, (int, long)):
+            return int
+        if issubclass(type_, (str, unicode)):
+            return str
+        return type_
 
     def _get(self, owner):
         if not hasattr(owner, self._wrapped_variable):
@@ -584,20 +604,18 @@ class JSONProperty(CustomizableJSONProperty):
         if value is not None and self._value_type is not None:
             bad_element = lambda e: (
                 not isinstance(e, self._element_type) and
-                not (isinstance(e, int) and self._element_type == long))
+                not (isinstance(e, int) and self._element_type == int))
             if not isinstance(value, self._value_type):
-                # Exception is that the value is an int and the expected type
-                # is long. It is always safe to cast it up to long.
-                if isinstance(value, int) and self._value_type == long:
-                    value = long(value)
+                # For Python 2 compatibility, an old-style string is accepted.
+                if self._value_type == str and isinstance(value, oldstr):
+                    pass
                 else:
                     raise TypeError(
                         ('Property {} expected type {}, but got a value {} of '
                          'type {}').format(
                              self.name, self._value_type.__name__, value,
                              value.__class__.__name__))
-            elif ((issubclass(self._value_type, list) or
-                   issubclass(self._value_type, tuple)) and
+            elif (issubclass(self._value_type, (list, tuple)) and
                     self._element_type is not None):
                 if any(map(bad_element, value)):
                     raise TypeError(
@@ -606,14 +624,13 @@ class JSONProperty(CustomizableJSONProperty):
                              self.name, self._value_type.__name__,
                              self._element_type.__name__, value))
             elif issubclass(self._value_type, dict):
-                bad_key = lambda k: (not isinstance(k, str) and
-                                     not isinstance(k, unicode))
-                if any(map(bad_key, value.iterkeys())):
+                bad_key = lambda k: not isinstance(k, (str, oldstr))
+                if any(map(bad_key, value.keys())):
                     raise TypeError(
-                        ('Property {} expected a dict with str or unicode '
+                        ('Property {} expected a dict with string '
                          'keys, but got {}').format(self.name, value))
                 if self._element_type is not None:
-                    if any(map(bad_element, value.itervalues())):
+                    if any(map(bad_element, value.values())):
                         raise TypeError(
                             ('Property {} expected a dict with values of type '
                              '{}, but got {}').format(
@@ -791,12 +808,12 @@ def parse(obj, readonly=False, omittable=True, **kwargs):
         property_type = ReadonlyJSONProperty
     else:
         property_type = JSONProperty
-    for key, value in obj.iteritems():
+    for key, value in obj.items():
         value = _replace_containers(value, readonly, omittable)
         setattr(cls, key, property_type(name=key, default=value,
                                         omittable=omittable))
     # Create a property if it's not in the input object.
-    for key, value in kwargs.iteritems():
+    for key, value in kwargs.items():
         if not hasattr(cls, key):
             setattr(cls, key, property_type(key, default=value))
     return cls(**kwargs)

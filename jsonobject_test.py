@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 
+from builtins import int
+from builtins import object
+from builtins import str
+from past.builtins import long
+from past.builtins import unicode
+
 import pytest
 
 import jsonobject
@@ -365,7 +371,8 @@ class TestJSONSerializableObject(object):
 
     def test_value_type(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            a = jsonobject.JSONProperty(default='A', value_type=str)
+            # In Python 2, prefer using value_type of unicode if you pass text.
+            a = jsonobject.JSONProperty(default=u'A', value_type=unicode)
             b = jsonobject.JSONProperty(default=123, value_type=int)
             c = jsonobject.JSONProperty(default='C')
 
@@ -376,9 +383,25 @@ class TestJSONSerializableObject(object):
             s.a = 123
         with pytest.raises(TypeError):
             s.b = 'B'
+        # Though not recommended, it's OK to pass a Python 2 str (without
+        # encoding) even if value_type is Python 2 unicode. It's assumed that
+        # the string is encoded with UTF-8.
+        s.a = 'A'
         # c doesn't declare the value type: any arbitrary type is acceptable.
         s.c = 456
         assert s.json(sort_keys=True) == '{"a": "A", "b": 123, "c": 456}'
+
+    def test_value_type_str_unicode(self):
+        class SomeObject(jsonobject.JSONSerializableObject):
+            # In Python 3, you use str everywhere. You can still pass unicode
+            # strings. Follow this style also if you need to support both
+            # Python 2 and 3.
+            # If you don't need to support Python 2, you would drop 'u' literal
+            # prefix.
+            a = jsonobject.JSONProperty(default=u'A', value_type=str)
+
+        s = SomeObject()
+        assert s.json(sort_keys=True) == '{"a": "A"}'
 
     def test_value_type_default(self):
         # It's also forbidden to have an incompatible default value.
@@ -387,8 +410,22 @@ class TestJSONSerializableObject(object):
             class SomeObject(jsonobject.JSONSerializableObject):
                 a = jsonobject.JSONProperty(default='A', value_type=int)
 
+    def test_value_type_long_ing(self):
+        # It is allowed to assign a large number to a field expecting an int.
+        # This is preferred type of value_type for integers, and works both in
+        # Python 2 and 3.
+        class SomeObject(jsonobject.JSONSerializableObject):
+            a = jsonobject.JSONProperty(default=123, value_type=int)
+
+        s = SomeObject()
+        assert s.a == 123
+        s.a = 9223372036854775808  # 2^64
+        assert s.a == 9223372036854775808
+
     def test_value_type_int_long(self):
         # It is allowed to assign an int to a field expecting a long.
+        # Note: long is no longer available in Python 3. Always prefer to
+        # value_type=int.
         class SomeObject(jsonobject.JSONSerializableObject):
             a = jsonobject.JSONProperty(default=123, value_type=long)
 
@@ -463,7 +500,7 @@ class TestJSONSerializableObject(object):
 
     def test_parse_text(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty(default=u'FOO', value_type=unicode)
+            foo = jsonobject.JSONProperty(default=u'FOO', value_type=str)
             bar = jsonobject.JSONProperty(default=0, value_type=int)
 
         s = SomeObject.parse_text('{"foo": "FOOFOO", "bar": 123}')
@@ -487,7 +524,7 @@ class TestJSONSerializableObject(object):
 
     def test_parse_overriding(self):
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty(default=u'FOO', value_type=unicode)
+            foo = jsonobject.JSONProperty(default=u'FOO', value_type=str)
 
         s = SomeObject.parse({'foo': u'FOOFOO'})
         assert s.foo == u'FOOFOO'
@@ -518,7 +555,7 @@ class TestJSONSerializableObject(object):
         # Element type declared as long, but it's acceptable to receive int
         # values. They are always safe to upcast.
         class SomeObject(jsonobject.JSONSerializableObject):
-            foo = jsonobject.JSONProperty(value_type=dict, element_type=long)
+            foo = jsonobject.JSONProperty(value_type=dict, element_type=int)
 
         s = SomeObject.parse_text('{"foo": {"a": 1, "b": 2}}')
         assert len(s.foo) == 2
@@ -636,7 +673,7 @@ class TestJSONSerializableObject(object):
                 # Create properties dynamically and add to the dynamically
                 # created class object. You may want to import not from kwargs,
                 # and use JSON instead.
-                for key, value in kwargs.iteritems():
+                for key, value in kwargs.items():
                     if not hasattr(cls, key):
                         setattr(cls, key, jsonobject.JSONProperty(
                             name=key, default=value))
@@ -668,7 +705,7 @@ class TestJSONSerializableObject(object):
                 cls = self.__class__
                 # Create properties dynamically and add to the shared class
                 # object.
-                for key, value in kwargs.iteritems():
+                for key, value in kwargs.items():
                     if not hasattr(cls, key):
                         setattr(cls, key, jsonobject.JSONProperty(
                             name=key, default=value))
